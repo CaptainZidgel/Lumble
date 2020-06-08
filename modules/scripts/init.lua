@@ -1,1115 +1,814 @@
-local afk = require("scripts.afk")
-local lua = require("scripts.lua")
+--external includes
+local inspect = require("inspect")
+--lumble provided
 local mumble = require("lumble")
 local log = require("log")
-local lfs = require("lfs")
-local config = require("config")
-require("shunting")
-require("extensions.io")
+local channel = require("lumble.client.channel")
+-----------------------
 
+--------------------------------------Configuration
 local params = {
 	mode = "client",
 	protocol = "sslv23",
-	key = "config/dongerbot.key",
-	certificate = "config/dongerbot.pem",
+	key = "config/bot.key",
+	certificate = "config/bot.pem"
 }
+local client = mumble.getClient("zidgel-VM.local.", 64738, params)
+if not client then return end
+client:auth("2Poopy2Joe")
+--------------------------------------Extra funcs needed for use inside and outside of commands
+function file_exists(file) local f = io.open(file, "r") if f ~= nil then io.close(f) return true else return false end end	--https://stackoverflow.com/questions/4990990/check-if-a-file-exists-with-lua
 
-local client = mumble.getClient("::1", 64738, params)
+function qlines(file, complex)				--q[uickly read]lines and return their contents.
+	if file_exists(file) == false then log.info("Attempting to read file %s which doesn't exist, returning empty table", file) return {} end
+	local output = {}
+	for line in io.lines(file) do
 
-if not client then return end 
-client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
-
-client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
-	if event.channel ~= client.me:getChannel() then return end
-
-	local day = tonumber(os.date("%w"))
-	local hour = tonumber(os.date("%H"))
-	local minute = tonumber(os.date("%M"))
-
-	if day == 2 then
-		if hour == 18 then
-			client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
-		elseif hour == 19 then
-			client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
-		end
-	end
-end)
-
-client:hook("OnUserChannel", "LuaBot - OS Channels", function(client, event)
-	local linux = client:getChannel("Linux")
-	local windows = client:getChannel("Windows")
-
-	local os_version = event.user:getStats()["version"]["os_version"]
-
-	if event.user == client.me then return end
-
-	if (event.channel == linux and not string.find(os_version:lower(), "linux", 1, true)) or 
-		(event.channel == windows and not string.find(os_version:lower(), "win", 1, true)) then
-		event.user:move(event.user:getPreviousChannel())
-	end
-end)
-
-local function findMostPopularChannel()
-	local party = client.me:getChannel()
-
-	local root = client:getChannel()
-	local afkchannel = client:getChannel(config.afk.channel[root:getName()] or "AFK")
-
-	if not afkchannel then return end
-
-	local partyusers, num_party = party:getUsers()
-	if party == client.me:getChannel() then
-		num_party = num_party - 1
-	end
-
-	for id, channel in pairs(table.ShuffleCopy(client:getChannels())) do
-		local users, num_users = channel:getUsers()
-
-		if channel == client.me:getChannel() then
-			num_users = num_users - 1
-		end
-
-		if num_users > num_party and channel ~= client.me:getChannel() and channel ~= afkchannel then
-			party = channel
-		end
-	end
-
-	return party
-end
-
-client:hook("OnUserState", "Alone Checker", function(client, event)
-	if not client:isSynced() then return end
-
-	local users, num_users = client.me:getChannel():getUsers()
-	
-	if num_users <= 1 then
-		local party = findMostPopularChannel()
-		if party then
-			client.me:move(party)
-		end
-	end
-end)
-
-client:hook("OnUserState", "Muted - AFK", function(client, event)
-	local user = event.user
-	local root = client:getChannelRoot():getName()
-	local afk = client:getChannel(config.afk.channel[root] or "AFK")
-
-	if event.self_deaf == true then
-		user:move(afk)
-	elseif event.self_deaf == false and user:getPreviousChannel() ~= afk then
-		user:move(user:getPreviousChannel())
-	end
-end)
-
-client:hook("OnServerSync", function(client, me)
-	--[[local channel = client:getChannel("DongerBots Chamber of sentience learning")
-	me:move(channel)]]
-	--me:setRecording(true)
-	--me:setPrioritySpeaker(true)
-	--client:playOgg("audio/melee.ogg")
-end)
-
-client:hook("OnTextMessage", "soundboard", function(client, event)
-	local message = event.message
-	local user = event.actor
-
-	if message:sub(1,1) == "#" then
-		local path = ("audio/soundboard/%s"):format(message:sub(2))
-		local file = ("%s.ogg"):format(path)
-
-		if lfs.attributes(path,"mode") == "directory" then
-			local sounds = {}
-			for file in lfs.dir(path) do
-				if file ~= "." and file ~= ".." then
-					table.insert(sounds, file)
-				end
-			end
-			file = ("%s/%s"):format(path, sounds[math.random(1,#sounds)])
-		end
-		if lfs.attributes(file,"mode") == "file" then
-			log.debug("%s played: #%s", user, message:sub(2))
-			client:playOgg(file, user.session + 10)
-			return true
-		end
-	end
-end)
-
-lua.install(client)
-afk.install(client)
-
-client:addCommand("summon", function(client, user, cmd, args, raw)
-	client.me:move(user:getChannel())
-end):setHelp("Bring me to your channel")
-
-client:addCommand("math", function(client, user, cmd, args, raw)
-	local str = raw:sub(#cmd+2)
-
-	local stack, err = math.postfix(str)
-
-	if not stack then
-		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
-		log.info(message:stripHTML())
-		user:message(message)
-		return
-	end
-
-	local node = math.postfix_to_infix(stack)
-	local equation = math.infix_to_string(node)
-	local total = math.solve_postfix(stack)
-
-	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation:gsub("%%", "%%%%"), total))
-end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
-
---[[local name_convert = {
-	["Amer"] = "Sancho",
-	["Aetsu"] = "Drak",
-	["Bkacjios"] = "Bhord",
-	["Paste"] = "Ranger Rick",
-	["Will"] = "Hrangus",
-	["NewDale"] = "Elph",
-}]]
-
-local name_convert = {
-	["Amer"] = "Zaid",
-	["Aetsu"] = "Torge",
-	["Bkacjios"] = "Kilmos",
-	["Paste"] = "Danger Rick",
-	["Will"] = "Gug",
-	["NewDale"] = "Alph",
-	["Davey"] = "Coughertwo",
-	["Henricos"] = "Gørf",
-}
-
-local card_suites = {
-	"&spades;", -- Spades
-	"&diams;",
-	"&clubs;",
-	"&hearts;", -- Hearts
-}
-
-local card_colors = {
-	"%s",
-	"<span style=\"color:#FF0000\">%s</span>",
-	"%s",
-	"<span style=\"color:#FF0000\">%s</span>",
-}
-local card_dim_colors = {
-	"<span style=\"color:#797979\">%s</span>",
-	"<span style=\"color:#ff4a4a\">%s</span>",
-	"<span style=\"color:#797979\">%s</span>",
-	"<span style=\"color:#ff4a4a\">%s</span>",
-}
-
-local card_values = {
-	[1] = {1, 11},
-	[2] = {2, 2},
-	[3] = {3, 3},
-	[4] = {4, 4},
-	[5] = {5, 5},
-	[6] = {6, 6},
-	[7] = {7, 7},
-	[8] = {8, 8},
-	[9] = {9, 9},
-	[10] = {10, 10},
-	[11] = {10, 10},
-	[12] = {10, 10},
-	[13] = {10, 10},
-}
-
-local card_names = {
-	[1] = "A",
-	[2] = "2",
-	[3] = "3",
-	[4] = "4",
-	[5] = "5",
-	[6] = "6",
-	[7] = "7",
-	[8] = "8",
-	[9] = "9",
-	[10] = "10",
-	[11] = "J",
-	[12] = "Q",
-	[13] = "K",
-}
-
-local blackjack_playing = {}
-
-local function drawRandomCard(user)
-	local username = user:getName()
-	local number
-	repeat
-		number = math.random(1,52)
-	until not blackjack_playing[username]["drawn"][number]
-	blackjack_playing[username]["drawn"][number] = true
-	local suit = (number % 4) + 1
-	local value = (number % 13) + 1
-	return { suit_id = suit, suit = card_suites[suit], value = card_values[value], name = card_names[value], id = number, bold = true }
-end
-
-local function getHandValues(user, index)
-	local username = user:getName()
-	local values = {0, 0}
-	local player = blackjack_playing[username]
-	local hand  = player[index]
-	for k,card in pairs(hand) do
-		values[1] = values[1] + card.value[1]
-		values[2] = values[2] + card.value[2]
-	end
-	return values
-end
-
-local function hasBlackjack(user, index)
-	local values = getHandValues(user, index)
-	return values[2] == 21
-end
-
-local function getNiceValueString(values)
-	local hand_value
-	if values[1] == values[2] then
-		hand_value = values[1]
-	else
-		hand_value = table.concat(values, '/')
-	end
-	return hand_value
-end
-
-local function getAllPlayersHands(user, stand)
-	local username = user:getName()
-	local name = name_convert[username] or username
-	local player = blackjack_playing[username]
-	local hand  = player["hand"]
-	local house = player["house"]
-
-	local message = "<p><table><tr><th>Player</th><th>Hand</th><th>Value</th></tr><tr><td>House</td><td><pre><b>"
-
-	for k,card in pairs(house) do
-		if not stand and k > 1 then
-			message = message .. "[?&nbsp;?]"
-		else
-			if card.bold then
-				card.bold = false
-				message = message .. card_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+			if not complex then
+				output[line:lower()] = true 
 			else
-				message = message .. card_dim_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+				string.gsub(line, "(%S+)%s(%d)", function(name, digit) output[name] = tonumber(digit) end) 
+			end
+		
+	end
+	return output
+end
+
+function write_to_file(t, complex)	--write a table to a csv file with the same name. This is the easiest solution I could think of for my problem. Rather than try and reopen and edit out specific lines from files, I just rewrite the files.
+	local file = io.open(t..'.csv', 'w+')		--"w+" = open the file given (t..'.csv') and write over it (all data lost)
+	for k,v in pairs(_G[t]) do
+		if not complex then
+			file:write(k..'\n')										--we write K instead of V because these tables store values in keys.
+		else
+			file:write(string.format("%s %d\n", k, v))
+		end
+	end
+	file:close()
+end
+
+local admins = {}
+client:requestACL()
+local cmd = {}
+
+--these must be global if you wish to use _G to find them (duh!)
+macadamias = qlines("macadamias.csv")
+warrants = qlines("warrants.csv")
+purgatory = qlines("purgatory.csv", true)
+local players = {}
+
+function find()
+
+end
+
+function channel:messager(m) --self=channel, m=message | SEND RECURSIVELY
+	self:message(m)
+	for _,channels in pairs(self:getChildren()) do
+		channels:messager(m)
+	end
+end
+
+function isAdmin(u)	--u is a user. user_id is 0 if unregistered or superuser. SuperUser can't use the bot because of this. Returning false in the case of a nil value so its a friendly boolean.
+	return u:getID() ~= 0 and admins[u:getID()] or false
+end
+
+function isMac(s)	--s will be a user object
+	return macadamias[s:getName():lower()] or false	--if its true return true, if its nil return a false value (to have neat booleans)
+end
+
+function getlen(c, recursive)
+	local i = 0
+	for _,_ in pairs(c:getUsers()) do
+		i = i + 1
+	end
+	if recursive then
+		for _,channel in pairs(c:getChildren()) do
+			for _,_ in pairs(channel:getUsers()) do
+				i = i + 1
 			end
 		end
 	end
-
-	if not stand then
-		message = message .. ("</b></pre></td><td>%s</td><tr><td>%s</td><td><pre><b>"):format(getNiceValueString(player.house[1].value), name)
-	else
-		message = message .. ("</b></pre></td><td>%s</td><tr><td>%s</td><td><pre><b>"):format(getNiceValueString(getHandValues(user, "house")), name)
-	end
-
-	for k,card in pairs(hand) do
-		if card.bold then
-			card.bold = false
-			message = message .. card_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
-		else
-			message = message .. card_dim_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
-		end
-	end
-
-	message = message .. ("</b></pre></td><td>%s</td></table>"):format(getNiceValueString(getHandValues(user, "hand")))
-	return message
+	return i
 end
 
-local function shouldHouseHit(user)
-	local house_values = getHandValues(user, "house")
-	return house_values[1] < 17 or house_values[2] < 17
-end
-
-local function doHouseHit(user)
-	local username = user:getName()
-	local house = blackjack_playing[username]["house"]
-	table.insert(house, drawRandomCard(user))
-end
-
-local function doEndGame(user)
-	while shouldHouseHit(user) do
-		doHouseHit(user)
-	end
-end
-
-client:addCommand("hit", function(client, user, cmd, args, raw)
-	local username = user:getName()
-	local name = name_convert[username] or username
-
-	local player = blackjack_playing[username]
-
-	if not player then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of <b>!blackjack</b>"
-		user:message(message)
-		return
-	end
-
-	table.insert(player["hand"], drawRandomCard(user))
-
-	local message
-	local hand_values = getHandValues(user, "hand")
-
-	if hand_values[1] > 21 and hand_values[2] > 21 then
-		doEndGame(user)
-
-		message = getAllPlayersHands(user, true)
-
-		local house_values = getHandValues(user, "house")
-		if house_values[1] > 21 and house_values[2] > 21 then
-			message = message .. "<p><b>House &amp; Player bust: <span style=\"color:#aa0000\">LOSS</span></b>"
-		elseif house_values[1] > hand_values[1] then
-			message = message .. "<p><b>House better hand: <span style=\"color:#aa0000\">LOSS</span></b>"
-		else
-			message = message .. "<p><b>Player bust: <span style=\"color:#aa0000\">LOSS</span></b>"
-		end
-
-		blackjack_playing[username] = nil
-	else
-		message = getAllPlayersHands(user)
-	end
-
-	user:getChannel():message(message)
-end):setHelp("Hit in a game of blackjack")
-
-client:addCommand("stand", function(client, user, cmd, args, raw)
-	local username = user:getName()
-	local name = name_convert[username] or username
-
-	local player = blackjack_playing[username]
-	if not player then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of <b>!blackjack</b>"
-		user:message(message)
-		return
-	end
-
-	doEndGame(user)
-
-	local message = getAllPlayersHands(user, true)
-	local hand_values = getHandValues(user, "hand")
-	local house_values = getHandValues(user, "house")
-
-	if house_values[1] > 21 and house_values[2] > 21 then
-		message = message .. "<p><b>House bust: <span style=\"color:#00aa00\">WIN</span></b>"
-	elseif house_values[1] == hand_values[1] then
-		message = message .. "<p><b>House tied: <span style=\"color:#3377ff\">DRAW</span></b>"
-	elseif house_values[1] > hand_values[1] then
-		message = message .. "<p><b>House better hand: <span style=\"color:#aa0000\">LOSS</span></b>"
-	elseif house_values[1] < hand_values[1] then
-		message = message .. "<p><b>Player better hand: <span style=\"color:#00aa00\">WIN</span></b>"
-	end
-
-	blackjack_playing[username] = nil
-	user:getChannel():message(message)
-end):setHelp("Stand in a game of blackjack"):alias("stay"):alias("hold")
-
-client:addCommand("blackjack", function(client, user, cmd, args, raw)
-	local username = user:getName()
-	local name = name_convert[username] or username
-	if blackjack_playing[username] then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You're already playing a game of <i>!blackjack</i>,  please <b>!hit</b> or <b>!stay</b>"
-		log.info(message:stripHTML())
-		user:message(message)
-		return
-	else
-		blackjack_playing[username] = { drawn = {}, hand = {}, house = {} }
-	end
-
-	local player = blackjack_playing[username]
-	local hand  = player["hand"]
-	local house = player["house"]
-
-	table.insert(hand, drawRandomCard(user))
-	table.insert(house, drawRandomCard(user))
-	table.insert(hand, drawRandomCard(user))
-	table.insert(house, drawRandomCard(user))
-
-	local message
-
-	if hasBlackjack(user, "hand") and hasBlackjack(user, "house") then
-		message = getAllPlayersHands(user, true) .. "<p><b>House &amp; Player Blackjack: <span style=\"color:#3377ff\">DRAW</span></b>"
-		blackjack_playing[username] = nil
-	elseif hasBlackjack(user, "hand") then
-		message = getAllPlayersHands(user, true) .. "<p><b>Player Blackjack: <span style=\"color:#00aa00\">WIN</span></b>"
-		blackjack_playing[username] = nil
-	elseif hasBlackjack(user, "house") then
-		message = getAllPlayersHands(user, true) .. "<p><b>House Blackjack: <span style=\"color:#aa0000\">LOSS</span></b>"
-		blackjack_playing[username] = nil
-	else
-		message = getAllPlayersHands(user)
-	end
-
-	user:getChannel():message(message)
-end):setHelp("Start a game of blackjack")
-
-local inititive = {
-	["Sancho"] = 5,
-	["Drak"] = 4,
-	["Bhord"] = 1,
-	["Danger Rick"] = 5,
-	["Hrangus"] = 1,
-}
-
-local did_roll = {}
-local rolled_initiatives = {}
-
-client:addCommand("initiative", function(client, user, cmd, args, raw)
-	local results, total = math.roll(20, 1)
-
-	local username = user:getName()
-	local name = name_convert[username] or username
-
-	if args[1] == "list" then
-		local message = "<p>Iinitiative order<ol>"
-		for k,v in pairs(rolled_initiatives) do
-			message = message .. string.format("<li><b>%s</b>: %d</li>", v.name, v.roll + v.bonus)
-		end
-		message = message .. "</ol>"
-
-		if name == "James" then
-			--rolled_initiatives = {}
-			--did_roll = {}
-			user:getChannel():message(message)
-		else
-			user:message(message)
-		end
-		return
-	elseif args[1] == "clear" then
-		if name == "James" then
-			rolled_initiatives = {}
-			did_roll = {}
-			user:message("Initiative list cleared")
-		else
-			user:message("Only the DM can clear the initiative list")
-		end
-		return
-	end
-
-	if did_roll[name] then
-		user:message(string.format("<i>%s</i>, you already rolled your initiative..", name))
-		return
-	end
-	did_roll[name] = true
-	--local bonus = (inititive[name] or 0)
-	local bonus = tonumber(args[1]) or 0
-	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#3377ff\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
-	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
-	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
-
-	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 3)
-
-	user:getChannel():message(message)
-end):setHelp("Roll for initiative"):setUsage("[clear, list, initiative bonus]"):alias("init")
-
-local advantage_shortcuts = {
-	"advantage",
-	"advan",
-	"adv",
-}
-
-local disadvantage_shortcuts = {
-	"disadvantage",
-	"disadvan",
-	"disadv",
-	"dadvan",
-	"disad",
-	"dadv",
-	"dis",
-}
-
-client:addCommand("roll", function(client, user, cmd, args, raw)
-	local str = raw:lower():sub(#cmd+2)
-
-	for _, dadv in pairs(disadvantage_shortcuts) do
-		str = str:gsub(dadv, "min(d20, d20)")
-	end
-	for _, adv in pairs(advantage_shortcuts) do
-		str = str:gsub(adv, "max(d20, d20)")
-	end
-
-	if not str:match("%d-[Dd]%d+") then
-		str = "d20" .. (str ~= "" and (" %s"):format(str) or "")
-	end
-
-	local rolls = {}
-	local orig_str = str
-	local num_rolls = 0
-	local max_roll = 0
-
-	str = string.gsub(str, "(%d-)[Dd](%d+)", function(num, dice)
-		num = tonumber(num) or 1
-		dice = tonumber(dice)
-		local results, total = math.roll(dice, num)
-		rolls[dice] = rolls[dice] or {}
-		num_rolls = num_rolls + num
-		max_roll = max_roll + (dice * num)
-		for k, result in pairs(results) do
-			table.insert(rolls[dice], result)
-		end
-		return ("(%s)"):format(table.concat(results, "+"))
-	end)
-
-	local stack, err = math.postfix(str)
-
-	if not stack then
-		local message = string.format("<p><b><span style=\"color:#aa0000\">Error</span></b>: %s", err)
-		log.info(message:stripHTML())
-		user:message(message)
-		return
-	end
-
-	local node = math.postfix_to_infix(stack)
-	local equation = math.infix_to_string(node)
-	local total = math.solve_postfix(stack)
-	local highest = -math.huge
-	local lowest = math.huge
-	local average = 0
-
-	local username = user:getName()
-	local name = name_convert[username] or username
-
-	local color = "#3377ff"
-	if total == max_roll then
-		color = "#00aa00"
-	elseif total == num_rolls then
-		color = "#aa0000"
-	end
-
-	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#3377ff\">%s</span></b> and got <b><span style=\"color:%s\">%s</span></b>", name, orig_str:gsub("%s+", ""), color, total)
-
-	if #stack > 2 then
-		message = message .. "<table>"
-
-		for dice, results in pairs(rolls) do
-			local roll_list = ""
-			for k, roll in pairs(results) do
-
-				average = average + (roll/dice)
-
-				if roll > highest then highest = roll end
-				if roll < lowest then lowest = roll end
-
-				if dice == roll then
-					roll_list = roll_list .. "<b><span style=\"color:#00aa00\">" .. roll .. "</span></b>"
-				elseif roll == 1 then
-					roll_list = roll_list .. "<b><span style=\"color:#aa0000\">" .. roll .. "</span></b>"
-				else
-					roll_list = roll_list .. roll
-				end
-				if k < #results then
-					roll_list = roll_list .. ", "
-				end
+function load_channels(root)
+	local t = {}
+	for _,channelr in pairs(root:getChildren()) do
+		for _,channel in pairs(channelr:getChildren()) do
+			if channel:getName():lower() == "red" or channel:getName():lower() == "blu" then
+				local color = channel:getName():lower()
+				local c = tonumber(channel:getParent():getName():match("%d"))
+				if t[c] == nil then t[c] = {} end
+				t[c][color] = {object = channel, length = getlen(channel)}
 			end
-			message = message .. ("\n<tr><td><b>D%d Rolls</b></td><td>: %s</td></tr>"):format(dice, roll_list)
-		end
-
-		message = message .. ("\n<tr><td><b>Average</b></td><td>: %s%%%%</td></tr>"):format(math.round(average/num_rolls*100, 2))
-		message = message .. ("\n<tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
-		message = message .. ("\n<tr><td><b>Total</b></td><td>: <b><span style=\"color:%s\">%s</span></b></td></tr>"):format(color, total)
-
-		message = message .. "</table>"
-	end
-
-	log.info(message:stripHTML())
-
-	if cmd:sub(2) == "proll" then
-		user:message(message)
-	else
-		local sound_num = math.min(num_rolls, 6)
-		local rand = math.random(1, 2)
-		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 3)
-		user:getChannel():message(message)
-	end
-end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd"):alias("rol"):alias("rool"):alias("rrol"):alias("rroll"):alias("rl"):alias("tol"):alias("yol")
-
-client:addCommand("flip", function(client, user, cmd, args, raw)
-	local number = tonumber(args[1]) or 1
-
-	local results, total = math.roll(2, number)
-
-	local num_heads = 0
-	local num_tails = 0
-
-	for i=1,#results do
-		local heads = results[i] == 1
-		num_heads = num_heads + (heads and 1 or 0)
-		num_tails = num_tails + (heads and 0 or 1)
-		results[i] = heads and "heads" or "tails"
-	end
-
-	local username = user:getName()
-	local name = name_convert[username] or username
-
-	local message
-
-	if #results > 1 then
-		message = ("<p><b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#3377ff\">%d heads</span></b> and <b><span style=\"color:#3377ff\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
-	else
-		message = ("<p><b>%s</b> flipped a coin and got <b><span style=\"color:#3377ff\">%s</span></b>"):format(name, results[1])
-	end
-
-	log.info(message:stripHTML())
-
-	if cmd:sub(2) == "pflip" then
-		user:message(message)
-	else
-		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 4)
-		user:getChannel():message(message)
-	end
-end):setHelp("Flip a coin"):setUsage("[#coins = 1]"):alias("pflip")
-
-client:addCommand("rollstats", function(client, user, cmd, args)
-	local stats = {}
-
-	for i=1,6 do
-		local results, total = math.roll(6, 4)
-
-		local stat = 0
-		table.sort(results, function(a, b) return a > b end)
-
-		for i=1,3 do
-			stat = stat + results[i]
-		end
-
-		table.insert(stats, stat)
-	end
-
-	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 3)
-	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
-end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
-
-local snapped = {}
-
-client:addCommand("snap", function(client, user, cmd, args)
-	local message = "<p>Thanos snapped and.."
-
-	local channel = user:getChannel()
-
-	if args[1] == "reset" then
-		snapped = {}
-		return
-	end
-
-	for session, user in pairs(channel:getUsers()) do
-		local name = user:getName()
-		if snapped[name] == nil then
-			snapped[name] = math.random() > 0.5
-		end
-
-		if snapped[name] then
-			message = message .. "<br><b>" .. name .. "</b>"
 		end
 	end
-
-	channel:message(message .. "<br> were killed")
-end):setHelp("thanos snap")
-
-local function printIdleChannelTree(branch)
-	local message = ""
-
-	local users, usern = branch:getUsers()
-	if usern > 0 then
-		message = message .. ("\n<tr><th colspan='2'>%s</th></tr>"):format(branch:getURL())
-		for k, user in UserPairs(users) do
-			message = message .. ("\n<tr><td>%s</b></td><td>: %s</td></tr>"):format(user:getURL(), math.SecondsToHuman(user.stats.idlesecs or 0))
-		end
-	end
-
-	for id, channel in ChannelPairs(branch:getChildren()) do
-		message = message .. printIdleChannelTree(channel)
-	end
-
-	return message
+	return t
+	--[[ Explanation:
+	We search through each channel and act on team rooms instead of pug servers so there is less looping / the code is more explicit.	
+	We find which team this is by getting the name, we find the server by extracting a substring with string:match()
+	We assign the data into the actual channelTable by direct indexing.
+	]]--
 end
 
-client:addCommand("idle", function(client, user, cmd, args, raw, public)
-	local message = "<table>" .. printIdleChannelTree(client:getChannelRoot(), message) .. "</table>"
-	if public then
-		user:getChannel():message(message)
+
+function randomTable(n)
+	math.randomseed(os.time())
+	local t = {}
+	for i =	1, n do
+		table.insert(t, i)
+	end
+	local r
+	for i = 1, #t do
+		r = math.random(i, #t)
+		t[i], t[r] = t[r], t[i]
+	end
+	return t
+end
+
+function determine_roll_num(ns)
+	for i,channel in ipairs(ns.pugs) do
+		local server = ns.addup:get("./Pug Server "..tostring(i))
+		local l = getlen(server, true)
+		if l < 2 then				--if 2 or more players, do the return. else: implicit continue
+			return 2 - l			--this will return "2" if 0 people are in the selected server and "1" if 1 person is added up. No overflows.
+		end
+	end
+	ns.addup:messager("Uh, are you sure you have space for new medics?")
+	return 0 --no space
+end
+
+function roll(t, bottom_up, namespace, uList)
+	log.info("Trying to get a new medic pick")
+	print("- Determing if possible")
+	local i = 1
+	local userTesting
+	local loop_through_channels = 0
+	local addup = namespace.addup
+	for _,channel in ipairs(namespace.pugs) do
+		loop_through_channels = loop_through_channels + 1
+		if channel.red.length + channel.blu.length < 2 then	--if there is space for medics in a server
+			break
+		elseif loop_through_channels >= #namespace.pugs then--if we have searched each available pug server
+			addup:messager("You can't roll, all channels are full.")
+			log.info("Someone tried to roll, was denied due to full medic slots.")
+			return
+		end
+	end
+	print("- Checking purgatory")
+	for _,player in pairs(addup:getUsers()) do
+		local pm = player:getName():lower()
+		if purgatory[pm] and players[pm].volunteered == false then	--here, volunteered takes on the role of checking if a person has been moved.
+			userTesting = pm
+			purgatory[pm] = purgatory[pm] - 1
+			if purgatory[pm] == 0 then
+				purgatory[pm] = nil
+			end
+			players[pm].volunteered = true
+			write_to_file('purgatory', true)
+			log.info("Enforcing purgatory: " .. userTesting)
+			goto skipsearch
+		end
+	end
+	print("- Searching addup")
+	while i <= getlen(addup) + 1 do
+		if i > getlen(addup) then
+			log.info("Run out of people to test.")
+			namespace.root:messager("Everyone here has played Medic.")
+			return
+		else
+			userTesting = uList[t[i]]
+			if players[userTesting].medicImmunity == true then
+				log.info(userTesting .. " has immunity, continuing...")
+				i = i + 1
+			elseif players[userTesting].medicImmunity == false then
+				log.info(userTesting .. " doesn't have immunity, breaking loop.")
+				break
+			end
+		end
+	end
+	::skipsearch::
+	addup:messager("Medic: " .. userTesting)
+	local user = players[userTesting]
+	local red, blu
+	local start, stop, iter
+	if bottom_up then	--the "length of" namespace.pugs is the number of pug servers available to a namespace.
+		start, stop, iter = #namespace.pugs, 1, -1
 	else
-		user:message(message)
+		start, stop, iter = 1, #namespace.pugs, 1
 	end
-end):setHelp("Print everyones idle statistics")
-
-client:addCommand("help", function(client, user, cmd, args, raw)
-	local message = "<table><tr><th>command</th><th>arguments</th><th>help</th></tr>"
-
-	local commands = {}
-
-	for cmd,info in pairs(client:getCommands()) do
-		table.insert(commands, info)
+	for i = start, stop, iter do					--loop through each each of the pug servers.
+		local server = namespace.pugs[i]
+		if server.red.length + server.blu.length < 2 then
+			red, blu = server.red, server.blu
+			break
+		end
 	end
+	addup:link(red.object, blu.object)
+	if red.length <= 0 then
+		user.object:move(red.object)
+		red.length = red.length + 1
+	elseif blu.length <= 0 then
+		user.object:move(blu.object)
+		blu.length = blu.length + 1
+	else
+		log.info("Error in roll-move")
+		return
+	end
+	log.info("Moved " .. user.object:getName())
+	user.dontUpdate = true
+	user.medicImmunity = true
+	user.captain = true
+end
 
-	table.sort(commands, function(a, b)
-		return (a.cmd < b.cmd) or (a.cmd == b.cmd and a.name < b.name)
-	end)
+function parse(s, context)
+	local kwords = {}
+	local flags = {}
+	for word in string.gmatch(s, "%S+") do  --%s = space char, %S = not space char. + means multiple in a row. Use this over %w+, to retain underscores.
+		if word:sub(1, 1) == "-" then
+			flags[word:sub(2):lower()] = true	--insert flags without the dash
+		else
+			table.insert(kwords, word:lower())			--insert each positional argument into table kwords (includes the cmd name until we remove it).
+		end	
+	end
+	local c_name = table.remove(kwords, 1)	--remove+return the first value (the command name). this way, every value in this table is a parameter. set a variable c_name (command_name) to this value for evaluation.
+	if cmd[c_name] ~= nil then							--if function exists
+		local ret = cmd[c_name](context, kwords, flags)		--call function by name with context and arguments and flags. Set any return to a var.
+		if ret == -1 then
+			context.sender:message("You don't have permission for this command: "..c_name)
+		end
+	else	
+		context.sender:message("This command is unknown: "..c_name)
+	end
+end
+--------------------------------------------------serversync
 
-	local show_all = args[1] == "all" or args[2] == "all"
-	local show_user = args[1] == "user" or args[2] == "user"
+client:hook("OnServerSync", function(client, joe)	--this is where the initialization happens. The bot can do nothing in mumble before this. "joe" is "me", this bot's user object.
+	local _date = os.date('*t')
+	_date = _date.month.."/".._date.day
+	log.info("===========================================", false)
+	log.info("Connected, Syncd as "..joe:getName().." v4.0.0".." on ".. _date)
+	log.info("===========================================", false)
+	motd, msgen = "", false		--message of the day, message of the day bool	
+	------------------------------------------------
+	root = client:getChannelRoot()
+	spacebase = root:get("./A/Spacebase")
+	------------------------------------------------"advanced" pugs (advanced to distinguish from junior)
+	advNamed = {
+		root = root:get("Nut City Limits/Inhouse Pugs (Nut City)"),
+		connectlobby = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Connection Lobby"),
+		addup = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Add Up"),
+		notplaying = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Add Up/Chill Room (Not Playing)")
+	}
+	------------ok jr pugs now----------------------
+	jrNamed = {
+		root = root:get("Nut City Limits/Weenie Hut Junior Pugs"),
+		connectlobby = root:get("Nut City Limits/Weenie Hut Junior Pugs/Entrance"),
+		addup = root:get("Nut City Limits/Weenie Hut Junior Pugs/Add Up JUNIOR"),
+		notplaying = root:get("Nut City Limits/Weenie Hut Junior Pugs/Add Up JUNIOR/Not Playing")
+	}
+	------------------------------------------------
+	joe:move(spacebase)
+	players = {}
+	for _,v in pairs(client:getUsers()) do
+		local u = v:getName():lower()
+		players[u] = {
+			object = v,
+			volunteered = false,
+			captain = false,
+			dontUpdate = false,
+			channelB = v:getChannel(),
+			selfbotdeaf = false,
+			perma_mute = false,
+			imprison = false,
+			medicImmunity = isMac(v)
+		}
+	end
+	jrNamed.pugs = load_channels(jrNamed.addup)
+	advNamed.pugs = load_channels(advNamed.addup)
+	draftlock = false
+	dle = true
+end)
 
-	for k, info in pairs(commands) do
-		if ((info.master and (not show_user and user:isMaster())) or not info.master) and not info.aliased then
-			message = message .. ("<tr><td><b>%s%s</b></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], info.name, info.usage:escapeHTML(), info.help:escapeHTML())
-			
-			if show_all then
-				for k, sinfo in pairs(commands) do
-					if sinfo.cmd == info.cmd and sinfo.aliased then
-						message = message .. ("<tr><td><i>&nbsp;%s%s</i></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], sinfo.name, sinfo.usage:escapeHTML(), sinfo.help:escapeHTML())
+------------------------------------supplementary functions that must appear after serversync
+function get_namespace(obj, r_type)	--the namespace understander [r_type is return type, 's' or 't']
+	local channel	
+	if obj:getChannel() then --is a user
+		channel = obj:getChannel()
+	elseif obj:getParent() then --is a channel
+		channel = obj
+	end
+	local channels = {}
+	while channel ~= root do
+		table.insert(channels, channel)
+		channel = channel:getParent()
+	end
+	if channels[#channels - 1] == advNamed.root then
+		return r_type == "s" and 'advNamed' or advNamed
+	elseif channels[#channels - 1] == jrNamed.root then
+		return r_type == "s" and 'jrNamed' or jrNamed
+	else
+		--print(obj:getChannel())
+		return {pugs={}}
+	end
+end
+----------------------------------commands
+--[[Admins]]--
+function cmd.roll(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local bottom_up = false
+	local ns = flags["newb"] and jrNamed or advNamed
+	draftlock = true
+	log.info("Draftlock switched to true after roll begins")
+	ns.root:messager("Medics being rolled, draft is locked.")
+	local toRoll
+	if #args == 0 then
+		toRoll = determine_roll_num(ns)
+		print("No integer specified, rolling *just enough* medics!: "..tostring(toRoll))
+	else	
+		toRoll = tonumber(args[1])
+		print("Rolling "..args[1].." medics as specified by user")
+	end
+	if flags["b"] then
+		bottom_up = true
+	end
+	while toRoll > 0 do
+		local uList = function() local t = {} for _,u in pairs(ns.addup:getUsers()) do table.insert(t, u:getName():lower()) end return t end
+		roll(randomTable(getlen(ns.addup)), bottom_up, ns, uList())
+		toRoll = toRoll - 1
+	end
+end
+function cmd.link(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local ns = flags["newb"] and jrNamed or advNamed
+	local server = ns.pugs[tonumber(args[1])]
+	local red, blu = server.red.object, server.blu.object
+	ns.addup:link(blu, red)
+	blu:link(red)
+	log.info("Server " .. args[1] .. " subchannels linked by " .. ctx.sender_name)
+end
+function cmd.unlink(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local ns = flags["newb"] and jrNamed or advNamed
+	local server = ns.pugs[tonumber(args[1])]
+	local red, blu = server.red.object, server.blu.object
+	ns.addup:unlink(blu, red)
+	blu:unlink(red)
+	draftlock = false
+	log.info("Draftlock -> false. reason: unlink, DLE = "..tostring(dle))
+	log.info("Server " .. args[1] .. " subchannels unlinked by " .. ctx.sender_name)
+end
+function cmd.dc(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local ns = flags["newb"] and jrNamed or advNamed
+	draftlock = false
+	if dle then log.info("Draftlock switched to false after channel dump") end
+	local cnl = tonumber(args[1])
+	local server = ns.pugs[cnl]
+	if server == nil then
+		log.info("Invalid channel to dump: " .. cnl)
+		return
+	end
+	ctx.channel:messager("Attempting to dump channels...")
+	log.info("Trying to dump channel " .. args[1])
+	for _,room in pairs(server) do
+		for _,user in pairs(room.object:getUsers()) do
+			user:move(ns.addup)
+			local name = user:getName():lower()
+			local p = players[name]
+			p.imprison, p.captain, p.volunteer = false
+			if warrants[name] == true then
+				log.info("Banned " .. name .. " due to warrant!")
+				event.user:ban("The ban hammer has spoken!")
+				warrants[name] = nil														--remove this warrant
+				write_to_file("warrants")
+				return
+			end
+		end
+	end
+	ns.addup:messager("Channel "..cnl.." dumped by "..ctx.sender_name)
+	for _,room in pairs(server) do
+		room.object:link(ns.addup)
+	end
+end
+function cmd.clearmh(ctx)
+	if ctx.admin == false then return -1 end
+	for _,v in pairs(players) do
+		v.medicImmunity = isMac(v.object)
+		v.captain = false
+		v.volunteered = false
+	end
+	ctx.ns.t.addup:messager(ctx.sender_name .. " reset medic history.")
+	log.info(ctx.sender_name .. " cleared medic history.")
+end
+function cmd.strike(ctx, args)
+	if ctx.admin == false then return -1 end
+	local player = args[1]:lower()
+	players[player].medicImmunity = false
+	log.info(ctx.sender_name .. " removes Medic Immunity from " .. player)
+	ctx.ns.t.addup:messager(ctx.sender_name .. " removes " .. player .. "'s medic immunity.", ctx.sender)
+end
+function cmd.ami(ctx, args)
+	if ctx.admin == false then return -1 end
+	local player = args[1]:lower()
+	players[player].medicImmunity = true
+	log.info(ctx.sender_name .. " gives medic immunity to " .. player)
+	ctx.ns.t.addup:messager(ctx.sender_name .. " gives " .. player .. " medic immunity.", ctx.sender)
+end
+function cmd.massadd(ctx, args)
+	if ctx.admin == false then return -1 end
+	for _,user in ipairs(args) do
+		local p = players[user:lower()]
+		if p then
+			p.medicImmunity = true
+		end
+	end
+	log.info(ctx.sender_name .. " gave med immunity to " .. table.concat(args, ",", 2))
+end
+function cmd.cull(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local ns = flags["newb"] and jrNamed or advNamed
+	ns.root:messager("Deafened users are being moved to chill room! Blame "..ctx.sender_name)
+	for _,user in pairs(ns.addup:getUsers()) do
+		if user:isSelfDeaf() then
+			user:move(ns.notplaying)
+		end
+	end
+	log.info("Deafened users culled")
+end
+function cmd.afkcheck(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	local ns = flags["newb"] and jrNamed or advNamed
+	for _,user in pairs(ns.addup:getUsers()) do
+		user:requestStats()
+		local is = user:getStat("idlesecs")
+		if is > 300 then
+			log.info(user:getName().." is idle, but not deafened, moving them. Mins:"..tostring(event.idlesecs/60))
+			user:move(ns.notplaying)
+			user:message("Hey! I think you've been idle for 5 minutes so I'm moving you out of add up.")
+		end
+	end
+end
+function cmd.mund(ctx)
+	if ctx.admin == false then return -1 end
+	local t = {}
+	for _,user in pairs(client:getUsers()) do
+		local p = players[user:getName():lower()]
+		if p.selfbotdeaf then
+			user:setDeaf(false)
+			p.selfbotdeaf = false
+			table.insert(t, user:getName())
+		end
+	end
+	log.info(ctx.sender_name .. " mass undeafened: " .. table.concat(t, " "))
+end
+function cmd.setmotd(ctx, args)
+	if ctx.admin == false then return -1 end
+	motd = table.concat(args, " ")
+	log.info("MOTD set to "..motd.." by "..ctx.sender_name)
+end
+function cmd.readout(ctx, args)
+	if ctx.admin == false then return -1 end
+	if type(_G[args[1]]) == "table" then
+		ctx.sender:message("Attemping to readout from table...")
+		for k,v in pairs(_G[args[1]]) do
+			ctx.sender:message(args[1] .. ": k,v: " .. k .. ", " .. tostring(v))
+		end
+		ctx.sender:message("Finished reading from table...")
+	else
+		ctx.sender:message(args[1] .. ": " .. tostring(_G[args[1]]))
+	end
+end
+function cmd.pmute(ctx, args)									--"perma" mute a user. (in vanilla mumble, if someone server muted reconnects, then they lose their muted status. This keeps this muted.
+	if ctx.admin == false then return -1 end
+	local player = players[args[1]]
+	local bool = not player.perma_mute				--if user is server muted (method isMuted() appears to not work)
+	player.perma_mute = bool
+	player.object:setMuted(bool)
+end
+function cmd.dpr(ctx, args)
+	if ctx.admin == false then return -1 end
+	players[args[1]].imprison = false
+	log.info("Released from prison: "..args[1])
+end
+function cmd.append(ctx, args)
+	if ctx.admin == false then return -1 end
+	if #args < 2 then ctx.sender:message("Are you missing a parameter?") return end
+	_G[args[1]][args[2]:lower()] = true
+	write_to_file(args[1])
+	log.info(ctx.sender_name.." committed "..args[2].." to table "..args[1])
+	ctx.sender:message("Added "..args[2].." to table "..args[1])
+end
+function cmd.remove(ctx, args)
+	if ctx.admin == false then return -1 end
+	if #args < 2 then ctx.sender:message("Are you missing a parameter?") return end
+	_G[args[1]][args[2]:lower()] = nil
+	write_to_file(args[1])
+	log.info(ctx.sender_name.." removed "..args[2].." from table "..args[1])
+	ctx.sender:message("removed "..args[2].." from table "..args[1])
+end
+function cmd.draftlock(ctx, args)
+	if ctx.admin == false then return -1 end
+	if #args == 0 then 
+		draftlock = not draftlock
+	elseif args[1] == "true" then
+		draftlock = true
+	elseif args[1] == "false" then
+		draftlock = false
+	else
+		ctx.sender:message("Unknown value: "..args[1])
+	end
+	if dle then ctx.ns.t.addup:messager(ctx.sender_name .. " toggled draftlock to " .. tostring(draftlock)) end
+	log.info(ctx.sender_name .. " toggled draft lock to " .. tostring(draftlock))
+end
+function cmd.sync(ctx)
+	if ctx.admin == false then return -1 end
+	jrNamed.pugs = load_channels(jrNamed.addup)
+	advNamed.pugs = load_channels(advNamed.addup)
+	ctx.sender:message("Sync'd channels")
+	log.info("Updated channels.")
+end
+function cmd.toggle(ctx, args, flags)
+	if ctx.admin == false then return -1 end
+	if args[1] == "dl" or args[1] == "dle" then
+		dle = not dle
+		ctx.sender:message("The draftlock system is now..")
+		if dle then
+			ctx.sender:message("On.")
+			ctx.sender:message("Draftlocked?: "..tostring(draftlock))
+		else
+			ctx.sender:message("Off.")
+		end
+		log.info("Draftlock eligibility toggled to "..tostring(dle))
+	elseif args[1] == "motd" then
+		msgen = not msgen
+		log.info("MOTD toggled to "..tostring(msgen).." by "..ctx.sender_name)
+	elseif flags["f"] then
+		if type(_G[args[1]]) == "boolean" then
+			_G[args[1]] = not _G[args[1]]
+			ctx.sender:message(_G[args[1]] .. " set to " .. tostring(_G[args[1]]))
+			log.info(_G[args[1]] .. " set to " .. tostring(_G[args[1]]) .. " by " .. ctx.sender_name)
+		end
+	end		
+end
+function cmd.purg(ctx, args)
+	if ctx.admin == false then return -1 end
+	local t = tonumber(args[2]) or 3
+	if t == 0 then t = nil end
+	purgatory[args[1]:lower()] = t
+	log.info(string.format("%s set %s 's medic purgatory length to %i", ctx.sender_name, args[1], t))
+	write_to_file('purgatory', true)
+end
+--[[Plebians]]--
+function cmd.pmh(ctx, args, flags)
+	if flags["me"] then
+		if ctx.p_data.medicImmunity then
+			ctx.sender:message("You have medic immunity! For now.")
+		else
+			ctx.sender:message("You don't have immunity! Watch your back.")
+		end
+	else
+		for player,data in pairs(players) do
+			if data.medicImmunity then
+				ctx.sender:message(player .. " has medic immunity")
+			end
+		end
+	end
+end
+function cmd.v(ctx, args)
+	local ns = ctx.ns.t
+	local addup, connectlobby = ns.addup, ns.connectlobby
+	if ctx.channel == addup or ctx.channel == connectlobby or ctx.channel == spacebase then
+		local team = args[1]:lower()		
+		if team == "red" or team == "blue" or team == "blu" then --!v red
+			local server = args[2]
+			if server ~= nil then
+				server = ns.pugs[tonumber(server)]
+			else
+				for _,v in ipairs(ns.pugs) do
+					if v.red.length + v.blu.length < 3 then
+						server = v
+						break
 					end
 				end
 			end
-		end
-	end
-	user:message(message .. "</table>")
-end):setHelp("List all commands"):alias("commands"):alias("?")
-
-client:addCommand("kickme", function(client, user, cmd, args, raw)
-	user:kick(args[1] or "Bye bye!")
-end):setHelp("Kick yourself from the server"):setUsage("[reason]")
-
-client:addCommand("source", function(client, user, cmd, args, raw)
-	local command = client:getCommand(args[1])
-	if command then
-		local info = debug.getinfo(command.callback)
-		local f, err = io.open(info.short_src, "r")
-		local source = f:readLines(info.linedefined, info.lastlinedefined)
-		local fixed = source:gsub("%%", "%%%%"):escapeHTML():gsub("\r", "<br/>"):gsub("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
-		user:message("<p>" .. fixed .. "</p>")
-	end
-end):setHelp("See the source code of a command"):setUsage("<command name>"):alias("src")
-
-client:addCommand("about", function(client, user, cmd, args, raw)
-	local message = [[<p><b>Lumble</b>
-Created by <a href="https://github.com/bkacjios">Bkacjios</a> &amp; <a href="https://github.com/Someguynamedpie">Somepotato</a><br/>
-<a href="https://github.com/bkacjios/Lumble">https://github.com/bkacjios/Lumble</a>]]
-	user:message(message)
-end, "Get some information about LuaBot")
-
-client:addCommand("play", function(client, user, cmd, args, raw)
-	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]), nil, tonumber(args[3]))
-end):setHelp("Play an audio file"):setUsage("<file> [channel] [count]")
-
-local restricted = {}
-
-client:addCommand("restrict", function(client, user, cmd, args, raw)
-	local name = args[1]
-
-	local channel = user:getChannel()
-	local path = channel:getPath()
-
-	restricted[path] = restricted[path] or {}
-
-	if not restricted[path][name] then
-		user:getChannel():message("%s is now restricted from joining %s", name, channel:getName())
-		restricted[path][name] = true
-	else
-		user:getChannel():message("%s is no longer restricted from joining %s", name, channel:getName())
-		restricted[path][name] = false
-	end
-end):setHelp("Restrict a user from joining your current channel"):setUsage("<username>")
-
-client:hook("OnUserChannel", "LuaBot - User Restrict", function(client, event)
-	local user = event.user
-	local name = user:getName()
-	local channel = event.channel
-	local path = event.channel:getPath()
-
-	if restricted[path] and restricted[path][name] then
-		user:message("You are currently restricted from joining %s", channel:getName())
-		user:move(event.channel_prev)
-	end
-end)
-
-client:addCommand("volume", function(client, user, cmd, args, raw)
-	local volume = args[1]
-	local channel = tonumber(args[2])
-	if volume then
-		volume = tonumber(volume)/100
-		if not user:isMaster() then volume = math.min(volume,1) end
-		if channel then
-			client:setVolume(volume, channel)
-			log.debug(("[COMMAND] %s: changed the volume of channel %i to %i"):format(user:getName(), channel, volume*100))
-		else
-			client:setMasterVolume(volume)
-			log.debug(("[COMMAND] %s: changed the master volume to %i"):format(user:getName(), volume*100))
-		end
-	else
-		if channel then
-			user:message(("Volume: <b>%i</b>"):format(client:getVolume(channel)*100))
-		else
-			user:message(("Master volume: <b>%i</b>"):format(client:getMasterVolume()*100))
-		end
-	end
-end):setHelp("Set the volume of any playing audio"):setUsage("<volume> [channel]")
-
-local DND_CHAN_MUSIC = 1
-local DND_CHAN_AMBIENCE = 2
-
-local playlist = {}
-local track = { 0, 0 }
-
-local function playPlaylist(client, channel)
-	if not playlist[channel] then return end
-
-	if track[channel] >= #playlist[channel] then
-		track[channel] = 0
-	end
-	track[channel] = track[channel] + 1
-
-	if playlist[channel][track[channel]] then
-		client:playOgg(playlist[channel][track[channel]], channel, 0.35)
-	end
-end
-
-client:hook("AudioStreamFinish", playPlaylist)
-
-client:addCommand("dnd", function(client, user, cmd, args, raw)
-	local folder = cmd:sub(2) == "ambience" and "ambience" or "music"
-	local channel = cmd:sub(2) == "ambience" and DND_CHAN_AMBIENCE or DND_CHAN_MUSIC
-
-	playlist[channel] = {}
-
-	local path = ("audio/dnd/%s/%s/"):format(folder, args[1])
-
-	if args[1] == "none" or args[1] == "silence" then
-		if client:isPlaying(channel) then
-			client:getPlaying(channel):fadeOut(5)
-		end
-		return
-	end
-
-	if lfs.attributes(path,"mode") ~= "directory" then
-		local moods = {}
-
-		for file in lfs.dir("audio/dnd/" .. folder) do
-			if lfs.attributes("audio/dnd/" .. folder .. "/" .. file, "mode") == "directory" and file ~= "." and file ~= ".." then
-				table.insert(moods, file)
+			if server.red.length + server.blu.length < 3 then
+				if team == "red" then
+					team = server.red.object
+				elseif team == "blu" or team == "blue" then
+					team = server.blu.object
+				end
+				for _,user in pairs(team:getUsers()) do
+					if players[user:getName():lower()].volunteered then ctx.sender:message("You can't volunteer, this medic is already a volunteer") return end					
+					players[user:getName():lower()].medicImmunity = false
+					players[user:getName():lower()].captain = false
+					user:move(addup)
+				end
+				ctx.sender:move(team)
+				local p = ctx.p_data				--data of the sender
+				p.medicImmunity = true
+				p.volunteered = true
+				p.captain = true
+				if getlen(team, true) < 1 then
+					log.info(ctx.sender_name .. " has been imprisoned due to their volunteership.")
+					ctx.sender:message("Thanks for volunteering! You've been temporarily imprisoned to this channel until the game is over to prevent trolling. If you believe there's been an error and wish to be imprisoned, ask an admin to release you.")
+					p.imprison = team
+				end
+			else																								--rooms full
+				log.info("E102.1")
+				ctx.sender:message("Sorry, bot says you can't do this!")
+			end
+		else --!v username
+			local recipient = players[args[1]:lower()]
+			if recipient == nil then
+				ctx.sender:message("Hey, that's not a user I recognize. Did you spell it right?")
+				return
+			end
+			if args[1]:lower() == ctx.sender_name:lower() then
+				ctx.sender:message("You can't do that!")
+				return
+			end
+			if recipient.medicImmunity == false then
+				ctx.sender:message("This person has to have been rolled on medic to be volunteered for.")
+				return
+			end
+			if recipient.volunteered then
+				ctx.sender:message("You can't volunteer, this medic is already a volunteer") 
+				return 
+			end		
+			if string.find(recipient.object:getChannel():getParent():getName(), "Pug Server %d") == nil then
+				ctx.sender:message("This can't be done, the person you're trying to volunteer for isn't even in a pug server!")
+				return
+			end			
+			recipient.medicImmunity = false
+			recipient.captain = false
+			local c = recipient.object:getChannel()
+			recipient.object:move(addup)
+			local gifter = ctx.p_data
+			gifter.volunteered, gifter.captain, gifter.medicImmunity = true, true, true
+			gifter.object:move(c)
+			log.info(ctx.sender_name .. " has volunteered for " .. args[1] .. " successfully")
+			if getlen(c, true) < 1 then
+				log.info(ctx.sender_name .. " has been imprisoned due to their volunteership.")
+				ctx.sender:message("Thanks for volunteering! You've been temporarily imprisoned to this channel until the game is over to prevent trolling. If you believe there's been an error and wish to be imprisoned, ask an admin to release you.")
+				gifter.imprison = c
 			end
 		end
-
-		user:message("<i>Invalid mode</i>: %s<br/><b>Available Modes</b><br/>%s", args[1], table.concat(moods, "<br/>"))
-		return
+	else						--bad channel
+		ctx.sender:message("Error 103")
+		log.info("E103 | Can't volunteer from this channel")
+		log.info(ctx.channel:getName().."*"..ctx.channel:getParent():getName())
 	end
-
-	for file in lfs.dir(path) do
-		if file ~= "." and file ~= ".." and lfs.attributes(path .. file, "mode") == "file" and string.ExtensionFromFile(file) == "ogg" then
-			table.insert(playlist[channel], path .. file)
-		end
-	end
-
-	table.Shuffle(playlist[channel])
-
-	if client:isPlaying(channel) then
-		client:getPlaying(channel):fadeOut(3)
+end
+function cmd.deaf(ctx)
+	ctx.sender:setServerDeafened(true)
+	ctx.p_data.selfbotdeaf = true
+	log.info(ctx.sender_name .. " selfbot deafened.")
+end
+function cmd.undeaf(ctx)
+	if ctx.p_data.selfbotdeaf == true then
+		ctx.sender:setServerDeafened(false)
+		ctx.p_data.selfbotdeaf = false
+		log.info(ctx.sender_name .. " selfbot undeafened.")
 	else
-		track[channel] = 0
-		playPlaylist(client, channel)
+		ctx.sender:message("Says here you're not server deafened. Try doing !deaf then !undeaf")
+		log.info("E106 | isDeaf?"..tostring(ctx.sender:isDeaf()))
 	end
-end):setHelp("Set the mood for D&D"):setUsage("<mood>"):alias("mood"):alias("music"):alias("ambience")
-
-client:addCommand("fade", function(client, user, cmd, args, raw)
-	client:getPlaying(tonumber(args[1]) or 1):fadeOut(tonumber(args[2]) or 5)
-end):setHelp("Fade out the current audio"):setUsage("[channel] [duration]")
-
-client:addCommand("endsession", function(client, user, cmd, args, raw)
-	local channel = client.me:getChannel()
-
-	playlist[DND_CHAN_MUSIC] = {}
-	playlist[DND_CHAN_AMBIENCE] = {}
-
-	if client:isPlaying(DND_CHAN_MUSIC) then
-		client:getPlaying(DND_CHAN_MUSIC):fadeOut(5)
+end
+function cmd.purgstatus(ctx, args)
+	if purgatory[ctx.sender_name:lower()] then
+		ctx.sender:message(string.format("You must suffer %d more medic pug(s)!", purgatory[ctx.sender_name:lower()]))
+	else
+		ctx.sender:message("You have no purgatory!")
 	end
-	if client:isPlaying(DND_CHAN_AMBIENCE) then
-		client:getPlaying(DND_CHAN_AMBIENCE):fadeOut(5)
+end
+
+function cmd.flip(ctx)
+	math.randomseed(os.time())
+	local r = math.random(1, 2)
+	local c
+	if r == 1 then
+		c = ("Heads")
+	else
+		c = ("Tails")
 	end
-
-	if channel:getID() == 24 then
-		for session, user in pairs(channel:getUsers()) do
-			user:move("../")
-		end
+	ctx.channel:message(c.." (Coin flipped by "..ctx.sender_name..")")
+end
+function cmd.rng(ctx, args)
+	math.randomseed(os.time())
+	ctx.sender:message(tostring(math.random(tonumber(args[1]), tonumber(args[2]))))
+end
+-----------------------------------Hooks
+client:hook("OnTextMessage", function(client, event)
+	local msg = event.message:gsub("<.+>", ""):gsub("\n*", ""):gsub("%s$", "")	--clean off html tags added by mumble, as well as trailing spaces and newlines.
+	if string.find(msg, "!", 1) == 1 then	--if starts with !
+		parse(string.sub(msg, 2), {
+				p_data = players[event.actor:getName():lower()], 
+				admin = isAdmin(event.actor), 
+				sender_name = event.actor:getName(),
+				sender = event.actor,
+				channel = event.actor:getChannel()})
 	end
-end):setHelp("End the D&D session")
-
-client:addCommand("afk", function(client, user, cmd, args, raw)
-	local root = client:getChannelRoot():getName()
-
-	local afkchannel = client:getChannel(config.afk.channel[root] or "AFK")
-
-	if not afkchannel or user:getChannel() == afkchannel then return end
-
-	user:move(afkchannel)
-end):setHelp("Make the bot move you to the AFK channel")
-
-client:addCommand("tts", function(client, user, cmd, args, raw)
-	local str = raw:sub(#cmd+2)
-	os.execute(string.format("LD_LIBRARY_PATH=:/usr/local/lib ./say_linux -w tts.wav %q", "[:phone on]" .. str)) -- > /dev/null
-	os.execute(("oggenc --resample 48000 --quiet -o tts/%s.ogg tts.wav"):format(user.hash))
-	client:playOgg(("tts/%s.ogg"):format(user.hash), user.session + 100)
 end)
 
-local json = require("json")
-local https = require("ssl.https")
-
-local function getDuration(stamp)
-	local hours = string.match(stamp, "(%d+)H") or 0
-	local minutes = string.match(stamp, "(%d+)M") or 0
-	local seconds = string.match(stamp, "(%d+)S") or 0
-
-	if tonumber(hours) > 0 then
-		return string.format("%02d:%02d:%02d", hours, minutes, seconds)
-	else
-		return string.format("%02d:%02d", minutes, seconds)
+client:hook("OnACL", function(client, event)
+	admins = {}
+	for i=1, #event.groups.admin.add do
+		admins[event.groups.admin.add[i]] = true
 	end
-end
+end)
 
-function twitchHttps(url, ...)
-	local t = {}
-	local r, c, h = https.request({
-		url = url:format(...),
-		sink = ltn12.sink.table(t),
-		headers = {
-			["Client-ID"] = config.twitch.client,
-			["Accept"] = "application/vnd.twitchtv.v5+json"
-		},
-	})
-
-	r = table.concat(t, "")
-	return r, c, h
-end
-
-local function formatTwitchClip(id)
-	local req = twitchHttps(("https://api.twitch.tv/helix/clips?id=%s"):format(id))
-	if not req then return end
-	if( #req == 0 ) then return end
-
-	local js = json.decode(req)
-
-	local items = js.data[1]
-
-	if not items then return "Private or invalid Twitch.tv Clip." end
-
-	return [[
-<center><table>
-	<tr>
-		<td align="center">
-			<a href="%s"><img src="%s" width="250" /></a>
-		</td>
-	</tr>
-	<tr>
-		<td align="center" valign="middle">
-			<h4>%s</h4>
-		</td>
-	</tr>
-</table></center>
-]], items.url, items.thumbnail_url, items.title
-end
-
-local function formatTwitch(id)
-	local user = twitchHttps(("https://api.twitch.tv/kraken/users?login=%s"):format(id))
-	if not user or #user == 0 then return end
-
-	user = json.decode(user)
-
-	if user.error then return user.error end
-
-	if user._total ~= 1 then return end
-
-	user = user.users[1]
-
-	local stream = twitchHttps(("https://api.twitch.tv/kraken/streams/%d"):format(user._id))
-	if not stream or #stream == 0 then return end
-
-	stream = json.decode(stream)
-
-	if stream.error then return stream.error end
-
-	stream = stream.stream
-
-	if not stream then return "Invalid twitch.tv stream." end
-
-	--[[return [[
-<table>
-	<tr>
-		<th align="center" colspan="2"><a href="%s"><img src="%s" width="250" /></a></th>
-	</tr>
-	<tr>
-		<td><img src="%s" width="56"/></td>
-		<td>
-			<table>
-				<tr><td><h4>%s</h4></td></tr>
-				<tr><td>%s</td></tr>
-				<tr><td>%d viewers</td></tr>
-			</table>
-		</td>
-	</tr>
-</table>]]
-
-	return [[
-		<table>
-			<tr><td><a href="%s">%s</a> - %s</td></tr>
-			<tr><td><h4>%s</h4></td></tr>
-			<tr><td>%d viewers</td></tr>
-		</table>
-	]], stream.channel.url, stream.channel.display_name, stream.channel.game, stream.channel.status, stream.viewers
-end
-
-local function formatYoutube(id)
-	local req = https.request(("https://www.googleapis.com/youtube/v3/videos?key=%s&part=statistics,snippet,contentDetails&id=%s"):format(config.youtube.api, id))
-	if not req then return end
-	if( #req == 0 ) then return end
-
-	local js = json.decode(req)
-
-	local items = js.items[1]
-
-	if not items then return "Private or invalid YouTube video." end
-
-	return [[
-<table>
-	<tr>
-		<td align="center"><a href="http://youtu.be/%s"><img src="%s" width="250" /></a></td>
-	</tr>
-	<tr>
-		<td align="center" valign="middle"><h4>%s (%s)</h4></td>
-	</tr>
-</table>
-]], id, items.snippet.thumbnails.medium.url, items.snippet.title, getDuration(items.contentDetails.duration)
-end
-
-local function formatOther(url)
-	return ([[<p><center><a href="%s"><img src="%s" width="250" /></a></center>]]):format(url, url, url)
-end
-
-local valid_others = {
-	["jpg"] = true,
-	["jpeg"] = true,
-	["gif"] = true,
-	["png"] = true,
-	["tga"] = true,
-	["tif"] = true,
-	["bmp"] = true,
-}
-
-client:hook("OnTextMessage", "Thumbnails", function(client, event)
-	local message = event.message:unescapeHTML():stripHTML()
-	local user = event.actor
-
-	local youtube = message:match("youtube%.com/watch.-v=([%w_-]+)") or message:match("youtu%.be/([%w_-]+)" )
-	local twitchclip = message:match("clips.twitch.tv/(%w+)")
-	local twitch = message:match("twitch.tv/(%w+)")
-	--local other = message:match("(https?://[%w%p]+)")
-
-	--[[if youtube then
-		user:getChannel():message(formatYoutube(youtube))
-	elseif twitchclip then
-		user:getChannel():message(formatTwitchClip(twitch))
-	elseif twitch then
-		user:getChannel():message(formatTwitch(twitch))
-	end]]
-	--[[if other then
-		local ext = string.ExtensionFromFile(other):lower()
-		if valid_others[ext] then
-			user:getChannel():message(formatOther(other))
+client:hook("OnUserConnected", "When someone connects, update their information. If they need to be banned, ban them.", function(client, event)
+	local name = event.user:getName():lower()
+	if players[name] == nil then
+		players[name] = {
+			object = event.user,
+			volunteered = false,
+			captain = false,
+			channelB = event.user:getChannel(),
+			dontUpdate = false,
+			selfbotdeaf = false,
+			perma_mute = false,
+			imprison = false,
+			medicImmunity = isMac(event.user)
+		}
+	else
+		players[name].object = event.user
+		players[name].volunteered = false
+		players[name].captain = false
+		players[name].channelB = event.user:getChannel()
+		players[name].selfbotdeaf = false
+		if players[name].perma_mute == true then
+			event.user:setMuted(true)
 		end
-	end]]
+		if players[name].imprison then event.user:move(players[name].imprison) end
+	end
+	if warrants[name] == true then										--warrants are evaluated after the player data is set so that if this is the user's first time connecting under this bot session, it doesn't cause any errors.
+		log.info("Banned " .. name .. " due to warrant!")
+		event.user:ban("The ban hammer has spoken!")
+		warrants[name] = nil														--remove this warrant
+		write_to_file("warrants")
+		return
+	end
+	if msgen then
+		event.user:message(motd)
+	end
+end)
+
+client:hook("OnUserRemove", "When someone leaves the server, whether of their own volition or by the actions of a moderator", function(client, event)
+	if event.user == nil then
+		log.info("E104: Nil user remove")
+		return --i dont know if this needs to be here but im somehow getting an error that event.user is nil?
+	end
+	local u = players[event.user:getName():lower()]
+	local ns = get_namespace(event.user)
+	if event.ban then
+		log.info("•" .. event.user:getName() .. " banned by "..event.actor:getName().." with reason "..event.reason)
+	end
+	for _,server in ipairs(ns.pugs) do --Due to the way information is updated in Lumble, we need to keep our own records on channel lengths.
+		for _,room in pairs(server) do
+			if room.object == u.channelB then
+				room.length = room.length - 1
+				return
+			end
+		end
+	end
+	--"User disconnected from outside of pug room"
+end)
+
+client:hook("OnUserChannel", "When someone changes channel", function(client, event)	
+	--event is a table with keys: "user", "actor", "channel_prev", "channel"
+	event.from, event.to = event.channel_prev, event.channel
+	local ns, nss = get_namespace(event.user), get_namespace(event.user, 's')
+	if players[event.user:getName():lower()] == nil then
+			return --user just connected
+		end
+	if players[event.user:getName():lower()].imprison then						--if user must be imprisoned in one channel
+		if event.actor == event.user then event.user:message("Thanks for volunteering! You've been temporarily imprisoned to this channel until the game is over to prevent trolling. If you believe there's been an error and wish to be imprisoned, ask an admin to release you.") end	
+		event.user:move(players[event.user:getName():lower()].imprison)
+		return
+	end
+	if dle and draftlock and (event.to == addup) and not isAdmin(event.actor) then
+		if event.actor ~= event.user then
+			log.info(event.user:getName() .. " moved by " .. event.actor:getName() .. " from " .. event.from:getName() .. " to " .. event.to:getName())
+		end
+		log.info(event.user:getName() .. " tried to addup, was locked out.")
+		event.user:move(ns.connectlobby)
+		event.user:message("Sorry! Picking has already started and you're late! If you believe you've been wrongly locked out, tell an admin. They'll move you.")
+	else
+		local u = players[event.user:getName():lower()]
+		if u.dontUpdate == false and ns.pugs then
+			for _,server in ipairs(ns.pugs) do
+				for _,room in pairs(server) do
+					if event.from == room.object then
+						room.length = room.length - 1
+					elseif event.to == room.object then
+						room.length = room.length + 1
+					end
+				end
+			end
+		else
+			u.dontUpdate = false
+		end
+		u.channelB = event.to
+	end
 end)

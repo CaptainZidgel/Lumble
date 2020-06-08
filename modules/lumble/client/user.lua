@@ -4,7 +4,6 @@ user.__index = user
 local permission = require("lumble.permission").enum
 local packet = require("lumble.packet")
 local util = require("util")
-local config = require("config")
 
 local buffer = require("buffer")
 local log = require("log")
@@ -267,11 +266,6 @@ end
 
 function user:getStat(stat, default)
 	return self.stats[stat] or default
-end
-
-function user:isMaster()
-	-- Allow the superuser or masters to control the bot
-	return self:getName() == config.superuser or config.masters[self:getHash()]
 end
 
 return user
