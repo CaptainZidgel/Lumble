@@ -252,7 +252,7 @@ client:hook("OnServerSync", function(client, joe)	--this is where the initializa
 	motd, msgen = "", false		--message of the day, message of the day bool	
 	------------------------------------------------
 	root = client:getChannelRoot()
-	spacebase = root:get("./A/Spacebase")
+	spacebase = root:get("./Inhouse Pugs/Poopy Joes Space Base")
 	------------------------------------------------"advanced" pugs (advanced to distinguish from junior)
 	advNamed = {
 		root = root:get("./Inhouse Pugs/Pool 1"),
@@ -559,9 +559,10 @@ function cmd.purg(ctx, args)
 	log.info(string.format("%s set %s 's medic purgatory length to %i", ctx.sender_name, args[1], t))
 	write_to_file('purgatory', true)
 end
-function cmd.reACL(ctx, args)
+function cmd.updateadmins(ctx, args)
 	if ctx.admin == false then return -1 end
 	client:requestACL()
+	ctx.sender:message("Alright, I've just updated the admins.")
 end
 --[[Plebians]]--
 function cmd.pmh(ctx, args, flags)
@@ -719,6 +720,9 @@ client:hook("OnACL", function(client, event)
 	admins = {}
 	for i=1, #event.groups.admin.add do
 		admins[event.groups.admin.add[i]] = true
+	end
+	for i=1, #event.groups.moderator.add do
+		admins[event.groups.moderator.add[i]] = true
 	end
 end)
 
