@@ -1,8 +1,8 @@
-config/dongerbot.key
-config/dongerbot.pem
+config/
 *.ogg
 data.vorbis
 test.lua
 error.log
 *.o
 ocb-aes128/ocb.so
+connect.lua
