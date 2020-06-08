@@ -5,7 +5,7 @@ local mumble = require("lumble")
 local log = require("log")
 local channel = require("lumble.client.channel")
 -----------------------
-
+local conn = require("connect.lua")
 --------------------------------------Configuration
 local params = {
 	mode = "client",
@@ -13,7 +13,7 @@ local params = {
 	key = "config/bot.key",
 	certificate = "config/bot.pem"
 }
-local client = mumble.getClient("zidgel-VM.local.", 64738, params)
+local client = mumble.getClient(conn.ip, conn.port, params)
 if not client then return end
 client:auth("2Poopy2Joe")
 --------------------------------------Extra funcs needed for use inside and outside of commands
@@ -254,17 +254,17 @@ client:hook("OnServerSync", function(client, joe)	--this is where the initializa
 	spacebase = root:get("./A/Spacebase")
 	------------------------------------------------"advanced" pugs (advanced to distinguish from junior)
 	advNamed = {
-		root = root:get("Nut City Limits/Inhouse Pugs (Nut City)"),
-		connectlobby = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Connection Lobby"),
-		addup = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Add Up"),
-		notplaying = root:get("Nut City Limits/Inhouse Pugs (Nut City)/Add Up/Chill Room (Not Playing)")
+		root = root:get("./Inhouse Pugs/Pool 1"),
+		connectlobby = root:get("./Inhouse Pugs/Pool 1/Connection Lobby"),
+		addup = root:get("./Inhouse Pugs/Pool 1/Add Up"),
+		notplaying = root:get("./Inhouse Pugs/Pool 1/Add Up/Chill Room (Not Playing)")
 	}
 	------------ok jr pugs now----------------------
 	jrNamed = {
-		root = root:get("Nut City Limits/Weenie Hut Junior Pugs"),
-		connectlobby = root:get("Nut City Limits/Weenie Hut Junior Pugs/Entrance"),
-		addup = root:get("Nut City Limits/Weenie Hut Junior Pugs/Add Up JUNIOR"),
-		notplaying = root:get("Nut City Limits/Weenie Hut Junior Pugs/Add Up JUNIOR/Not Playing")
+		root = root:get("./Inhouse Pugs/Pool 2"),
+		connectlobby = root:get("./Inhouse Pugs/Pool 2/Entrance"),
+		addup = root:get("./Inhouse Pugs/Pool 2/Add Up"),
+		notplaying = root:get("./Inhouse Pugs/Pool 2/Add Up/Not Playing")
 	}
 	------------------------------------------------
 	joe:move(spacebase)
