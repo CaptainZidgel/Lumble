@@ -252,20 +252,21 @@ client:hook("OnServerSync", function(client, joe)	--this is where the initializa
 	motd, msgen = "", false		--message of the day, message of the day bool	
 	------------------------------------------------
 	root = client:getChannelRoot()
+	pugroot = root:get("./Inhouse Pugs")
 	spacebase = root:get("./Inhouse Pugs/Poopy Joes Space Base")
 	------------------------------------------------"advanced" pugs (advanced to distinguish from junior)
 	advNamed = {
-		root = root:get("./Inhouse Pugs/Pool 1"),
-		connectlobby = root:get("./Inhouse Pugs/Pool 1/Connection Lobby"),
-		addup = root:get("./Inhouse Pugs/Pool 1/Add Up"),
-		notplaying = root:get("./Inhouse Pugs/Pool 1/Add Up/Chill Room (Not Playing)")
+		root = pugroot:get("./Pool 1"),
+		connectlobby = pugroot:get("./Inhouse Pugs/Pool 1/Connection Lobby"),
+		addup = pugroot:get("./Pool 1/Add Up"),
+		notplaying = pugroot:get("./Pool 1/Add Up/Chill Room (Not Playing)")
 	}
 	------------ok jr pugs now----------------------
 	jrNamed = {
-		root = root:get("./Inhouse Pugs/Pool 2"),
-		connectlobby = root:get("./Inhouse Pugs/Pool 2/Entrance"),
-		addup = root:get("./Inhouse Pugs/Pool 2/Add Up"),
-		notplaying = root:get("./Inhouse Pugs/Pool 2/Add Up/Not Playing")
+		root = pugroot:get("./Pool 2"),
+		connectlobby = pugroot:get("./Pool 2/Entrance"),
+		addup = pugroot:get("./Pool 2/Add Up"),
+		notplaying = pugroot:get("./Pool 2/Add Up/Not Playing")
 	}
 	------------------------------------------------
 	joe:move(spacebase)
@@ -398,7 +399,7 @@ function cmd.clearmh(ctx)
 		v.captain = false
 		v.volunteered = false
 	end
-	ctx.ns.t.addup:messager(ctx.sender_name .. " reset medic history.")
+	pugroot:messager(ctx.sender_name .. " reset medic history.")
 	log.info(ctx.sender_name .. " cleared medic history.")
 end
 function cmd.strike(ctx, args)
