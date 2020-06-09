@@ -20,7 +20,7 @@ function user.new(client, packet)
 	for desc, value in packet:list() do
 		user[desc.name] = value
 	end
-	
+	user.__type = "lumble.user"
 	return user
 end
 
