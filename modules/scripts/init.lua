@@ -407,14 +407,14 @@ function cmd.strike(ctx, args)
 	local player = args[1]:lower()
 	players[player].medicImmunity = false
 	log.info(ctx.sender_name .. " removes Medic Immunity from " .. player)
-	ctx.ns.t.addup:messager(ctx.sender_name .. " removes " .. player .. "'s medic immunity.", ctx.sender)
+	pugroot:messager(ctx.sender_name .. " removes " .. player .. "'s medic immunity.", ctx.sender)
 end
 function cmd.ami(ctx, args)
 	if ctx.admin == false then return -1 end
 	local player = args[1]:lower()
 	players[player].medicImmunity = true
 	log.info(ctx.sender_name .. " gives medic immunity to " .. player)
-	ctx.ns.t.addup:messager(ctx.sender_name .. " gives " .. player .. " medic immunity.", ctx.sender)
+	pugroot:messager(ctx.sender_name .. " gives " .. player .. " medic immunity.", ctx.sender)
 end
 function cmd.massadd(ctx, args)
 	if ctx.admin == false then return -1 end
@@ -519,7 +519,7 @@ function cmd.draftlock(ctx, args)
 	else
 		ctx.sender:message("Unknown value: "..args[1])
 	end
-	if dle then ctx.ns.t.addup:messager(ctx.sender_name .. " toggled draftlock to " .. tostring(draftlock)) end
+	if dle then pugroot:messager(ctx.sender_name .. " toggled draftlock to " .. tostring(draftlock)) end
 	log.info(ctx.sender_name .. " toggled draft lock to " .. tostring(draftlock))
 end
 function cmd.sync(ctx)
@@ -582,7 +582,7 @@ function cmd.pmh(ctx, args, flags)
 	end
 end
 function cmd.v(ctx, args)
-	local ns = ctx.ns.t
+	local ns = get_namespace(ctx.sender)
 	local addup, connectlobby = ns.addup, ns.connectlobby
 	if ctx.channel == addup or ctx.channel == connectlobby or ctx.channel == spacebase then
 		local team = args[1]:lower()		
