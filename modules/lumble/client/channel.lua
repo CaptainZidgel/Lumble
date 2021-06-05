@@ -225,4 +225,16 @@ function channel:requestACL()
 	self:sendTCP(query)
 end
 
+function channel:isEnterRestricted()
+	return self.is_enter_restricted
+end
+
+function channel:create(name, temporary)
+	local chan = packet.new("ChannelState")
+	chan:set("parent", self:getID())
+	chan:set("name", name)
+	chan:set("temporary", temporary)
+	self:sendTCP(chan)
+end
+
 return channel

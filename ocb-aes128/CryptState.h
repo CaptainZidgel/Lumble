@@ -32,11 +32,12 @@
 #define _CRYPTSTATE_H
 
 #include <openssl/aes.h>
+#include <string>
 
 #define AES_KEY_SIZE_BITS   128
 #define AES_KEY_SIZE_BYTES  (AES_KEY_SIZE_BITS/8)
 
-class CryptState {
+class CryptStateOCB2 {
 	private:
 		unsigned char raw_key[AES_KEY_SIZE_BYTES];
 		unsigned char encrypt_iv[AES_BLOCK_SIZE];
@@ -48,35 +49,33 @@ class CryptState {
 		unsigned int uiLost;
 		unsigned int uiResync;
 
-		unsigned int uiRemoteGood;
-		unsigned int uiRemoteLate;
-		unsigned int uiRemoteLost;
-		unsigned int uiRemoteResync;
-
 		AES_KEY encrypt_key;
 		AES_KEY decrypt_key;
 		bool bInit;
 
 	public:
-		CryptState();
+		CryptStateOCB2();
 
 		bool isValid() const;
 		void genKey();
-		void setKey(const unsigned char* rkey, const unsigned char* eiv, const unsigned char* div);
-		void setDecryptIV(const unsigned char* iv);
-		unsigned char* getKey();
-		unsigned char* getEncryptIV();
-		unsigned char* getDecryptIV();
+		bool setKey(const std::string &rkey, const std::string &eiv, const std::string &div);
+		bool setRawKey(const std::string &rkey);
+		bool setEncryptIV(const std::string &iv);
+		bool setDecryptIV(const std::string &iv);
+
+		std::string getRawKey();
+		std::string getEncryptIV();
+		std::string getDecryptIV();
 
 		unsigned int getGood();
 		unsigned int getLate();
 		unsigned int getLost();
 
-		void ocb_encrypt(const unsigned char* plain, unsigned char* encrypted, unsigned int len, const unsigned char* nonce, unsigned char* tag);
-		void ocb_decrypt(const unsigned char* encrypted, unsigned char* plain, unsigned int len, const unsigned char* nonce, unsigned char* tag);
+		bool ocb_encrypt(const unsigned char* plain, unsigned char* encrypted, unsigned int len, const unsigned char* nonce, unsigned char* tag, bool modifyPlainOnXEXStarAttack = true);
+		bool ocb_decrypt(const unsigned char* encrypted, unsigned char* plain, unsigned int len, const unsigned char* nonce, unsigned char* tag);
 
 		bool decrypt(const unsigned char* source, unsigned char* dst, unsigned int crypted_length);
-		void encrypt(const unsigned char* source, unsigned char* dst, unsigned int plain_length);
+		bool encrypt(const unsigned char* source, unsigned char* dst, unsigned int plain_length);
 };
 
 
