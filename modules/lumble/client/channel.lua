@@ -9,7 +9,7 @@ function channel.new(client, packet)
 	}, channel)
 
 	channel:update(packet)
-
+	channel.__type = "lumble.channel"
 	return channel
 end
 

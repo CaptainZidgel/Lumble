@@ -857,7 +857,12 @@ function client:onUserState(packet)
 
 		self:hookCall("OnUserChannel", evnt)
 	end
-
+	
+	evnt.old_user = {
+			name = user:getName(),
+			session = user:getSession(),
+			id = user:getID()
+	}
 	user:update(packet)
 
 	self:hookCall("OnUserState", evnt)
