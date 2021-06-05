@@ -32,6 +32,8 @@ function mumble.connect(host, port, params, noretry)
 			params = client.params,
 			username = client.username,
 			password = client.password,
+			hooks = client.hooks,
+			commands = client.commands,
 			tokens = client.tokens,
 			try = 1,
 		})
@@ -73,6 +75,8 @@ function mumble.update()
 		local client, err = mumble.connect(info.host, info.port, info.params, true)
 		if client then
 			mumble.reconnect[i] = nil
+			client.hooks = info.hooks
+			client.commands = info.commands
 			client:auth(info.username, info.password, info.tokens)
 		else
 			info.try = info.try + 1
